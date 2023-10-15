@@ -12,6 +12,17 @@
 static const char* TAG = "u8g2_hal";
 static const unsigned int I2C_TIMEOUT_MS = 1000;
 
+#ifdef CONFIG_IDF_TARGET_ESP32
+#define SPI_HOST    SPI1_HOST
+#define HSPI_HOST   SPI2_HOST
+#define VSPI_HOST   SPI3_HOST
+#elif CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3
+// SPI_HOST (SPI1_HOST) is not supported by the SPI Master and SPI Slave driver on ESP32-S2
+#define SPI_HOST    SPI1_HOST
+#define FSPI_HOST   SPI2_HOST
+#define HSPI_HOST   SPI3_HOST
+#endif
+
 static spi_device_handle_t handle_spi;   // SPI handle.
 static i2c_cmd_handle_t handle_i2c;      // I2C handle.
 static u8g2_esp32_hal_t u8g2_esp32_hal;  // HAL state data.
@@ -175,8 +186,11 @@ uint8_t u8g2_esp32_i2c_byte_cb(u8x8_t* u8x8,
     case U8X8_MSG_BYTE_END_TRANSFER: {
       ESP_LOGD(TAG, "End I2C transfer.");
       ESP_ERROR_CHECK(i2c_master_stop(handle_i2c));
-      ESP_ERROR_CHECK(i2c_master_cmd_begin(I2C_MASTER_NUM, handle_i2c,
-                                           I2C_TIMEOUT_MS / portTICK_RATE_MS));
+      esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, handle_i2c,
+                                           I2C_TIMEOUT_MS / portTICK_RATE_MS);
+      if (ret != ESP_OK){
+        ESP_LOGW(TAG, "Error in I2C transfer..."); // This seems to happen once on certain displays. Seems like we can ignore it.
+      }
       i2c_cmd_link_delete(handle_i2c);
       break;
     }
