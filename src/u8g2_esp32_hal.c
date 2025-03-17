@@ -13,8 +13,10 @@ static const char* TAG = "u8g2_hal";
 static const unsigned int I2C_TIMEOUT_MS = 1000;
 
 static spi_device_handle_t handle_spi;   // SPI handle.
-static i2c_cmd_handle_t handle_i2c;      // I2C handle.
+static i2c_master_dev_handle_t handle_i2c; // I2C handle.
 static u8g2_esp32_hal_t u8g2_esp32_hal;  // HAL state data.
+uint8_t* tx_buffer;
+size_t num_bytes = 0;
 
 #define HOST    SPI2_HOST
 
@@ -33,6 +35,10 @@ static u8g2_esp32_hal_t u8g2_esp32_hal;  // HAL state data.
  */
 void u8g2_esp32_hal_init(u8g2_esp32_hal_t u8g2_esp32_hal_param) {
   u8g2_esp32_hal = u8g2_esp32_hal_param;
+  const size_t buff_size = 1024;
+  tx_buffer = malloc(buff_size);
+  memset(tx_buffer, 0, buff_size); // for automatically-allocated arrays
+  num_bytes = 0;
 }  // u8g2_esp32_hal_init
 
 /*
@@ -132,32 +138,34 @@ uint8_t u8g2_esp32_i2c_byte_cb(u8x8_t* u8x8,
         break;
       }
 
-      i2c_config_t conf = {0};
-      conf.mode = I2C_MODE_MASTER;
+      i2c_master_bus_config_t i2c_mst_config = {
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .i2c_port = I2C_MASTER_NUM,
+        .sda_io_num = u8g2_esp32_hal.bus.i2c.sda,
+        .scl_io_num = u8g2_esp32_hal.bus.i2c.scl,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
+      };
       ESP_LOGI(TAG, "sda_io_num %d", u8g2_esp32_hal.bus.i2c.sda);
-      conf.sda_io_num = u8g2_esp32_hal.bus.i2c.sda;
-      conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
       ESP_LOGI(TAG, "scl_io_num %d", u8g2_esp32_hal.bus.i2c.scl);
-      conf.scl_io_num = u8g2_esp32_hal.bus.i2c.scl;
-      conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
       ESP_LOGI(TAG, "clk_speed %d", I2C_MASTER_FREQ_HZ);
-      conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
-      ESP_LOGI(TAG, "i2c_param_config %d", conf.mode);
-      ESP_ERROR_CHECK(i2c_param_config(I2C_MASTER_NUM, &conf));
+      i2c_master_bus_handle_t bus_handle;
+      ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
+      uint8_t i2c_address = u8x8_GetI2CAddress(u8x8);
+      i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = i2c_address,
+        .scl_speed_hz = I2C_MASTER_FREQ_HZ,
+      };
+      ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &handle_i2c));
       ESP_LOGI(TAG, "i2c_driver_install %d", I2C_MASTER_NUM);
-      ESP_ERROR_CHECK(i2c_driver_install(I2C_MASTER_NUM, conf.mode,
-                                         I2C_MASTER_RX_BUF_DISABLE,
-                                         I2C_MASTER_TX_BUF_DISABLE, 0));
       break;
     }
 
     case U8X8_MSG_BYTE_SEND: {
       uint8_t* data_ptr = (uint8_t*)arg_ptr;
-      ESP_LOG_BUFFER_HEXDUMP(TAG, data_ptr, arg_int, ESP_LOG_VERBOSE);
-
       while (arg_int > 0) {
-        ESP_ERROR_CHECK(
-            i2c_master_write_byte(handle_i2c, *data_ptr, ACK_CHECK_EN));
+        tx_buffer[num_bytes++] = *data_ptr;
         data_ptr++;
         arg_int--;
       }
@@ -166,22 +174,18 @@ uint8_t u8g2_esp32_i2c_byte_cb(u8x8_t* u8x8,
 
     case U8X8_MSG_BYTE_START_TRANSFER: {
       uint8_t i2c_address = u8x8_GetI2CAddress(u8x8);
-      handle_i2c = i2c_cmd_link_create();
-      ESP_LOGD(TAG, "Start I2C transfer to %02X.", i2c_address >> 1);
-      ESP_ERROR_CHECK(i2c_master_start(handle_i2c));
-      ESP_ERROR_CHECK(i2c_master_write_byte(
-          handle_i2c, i2c_address | I2C_MASTER_WRITE, ACK_CHECK_EN));
+      ESP_LOGD(TAG, "Start I2C transfer to %02X.", i2c_address);
       break;
     }
 
     case U8X8_MSG_BYTE_END_TRANSFER: {
-      ESP_LOGD(TAG, "End I2C transfer.");
-      ESP_ERROR_CHECK(i2c_master_stop(handle_i2c));
-      esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, handle_i2c, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
-      if (ret != ESP_OK){
-        ESP_LOGW(TAG, "Error in I2C transfer..."); // This seems to happen once on certain displays. Seems like we can ignore it.
+      ESP_LOG_BUFFER_HEXDUMP(TAG, tx_buffer, num_bytes, ESP_LOG_VERBOSE);
+      esp_err_t err = i2c_master_transmit(handle_i2c, tx_buffer, num_bytes, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
+      if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Error in I2C transfer... '%d", err); // This seems to happen once on certain displays. Seems like we can ignore it.
       }
-      i2c_cmd_link_delete(handle_i2c);
+      num_bytes = 0;
+      ESP_LOGD(TAG, "End I2C transfer.");
       break;
     }
   }
