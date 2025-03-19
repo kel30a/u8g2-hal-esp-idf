@@ -261,7 +261,7 @@ uint8_t u8g2_esp32_gpio_and_delay_cb(u8x8_t* u8x8,
 
       // Delay for the number of milliseconds passed in through arg_int.
     case U8X8_MSG_DELAY_MILLI:
-      vTaskDelay(arg_int / portTICK_PERIOD_MS);
+      // vTaskDelay(arg_int / portTICK_PERIOD_MS);
       break;
   }
   return 0;
