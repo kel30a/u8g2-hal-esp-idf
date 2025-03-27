@@ -187,7 +187,7 @@ uint8_t u8g2_esp32_i2c_byte_cb(u8x8_t* u8x8,
       ESP_LOGD(TAG, "End I2C transfer.");
       ESP_ERROR_CHECK(i2c_master_stop(handle_i2c));
       esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, handle_i2c,
-                                           I2C_TIMEOUT_MS / portTICK_RATE_MS);
+                                           I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
       if (ret != ESP_OK){
         ESP_LOGW(TAG, "Error in I2C transfer..."); // This seems to happen once on certain displays. Seems like we can ignore it.
       }
