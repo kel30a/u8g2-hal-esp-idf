@@ -182,7 +182,7 @@ uint8_t u8g2_esp32_i2c_byte_cb(u8x8_t* u8x8,
       ESP_LOG_BUFFER_HEXDUMP(TAG, tx_buffer, num_bytes, ESP_LOG_VERBOSE);
       esp_err_t err = i2c_master_transmit(handle_i2c, tx_buffer, num_bytes, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
       if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Error in I2C transfer... '%d", err); // This seems to happen once on certain displays. Seems like we can ignore it.
+        ESP_LOGW(TAG, "Error in I2C transfer... '%d'", err); // This seems to happen once on certain displays. Seems like we can ignore it.
       }
       num_bytes = 0;
       ESP_LOGD(TAG, "End I2C transfer.");
